@@ -116,6 +116,13 @@ func Downsample(
 		if err := indexr.Series(postings.At(), &lset, &chks); err != nil {
 			return id, errors.Wrapf(err, "get series %d", postings.At())
 		}
+
+		for i, c := range chks[1:] {
+			if chks[i].MaxTime >= c.MinTime {
+				return id, errors.Errorf("found overlapping chunks within series %d. Chunks expected to be ordered by min time and non-overlapping, got: %v", postings.At(), chks)
+			}
+		}
+
 		// While #183 exists, we sanitize the chunks we retrieved from the block
 		// before retrieving their samples.
 		for i, c := range chks {
@@ -129,6 +136,9 @@ func Downsample(
 		// Raw and already downsampled data need different processing.
 		if origMeta.Thanos.Downsample.Resolution == 0 {
 			for _, c := range chks {
+				// TODO(bwplotka): We can optimze this further by using in WriteSeries iterators of each chunk instead of
+				// samples. Also ensure 120 sample limit, otherwise we have gigantic chunks.
+				// https://github.com/thanos-io/thanos/issues/2542
 				if err := expandChunkIterator(c.Chunk.Iterator(reuseIt), &all); err != nil {
 					return id, errors.Wrapf(err, "expand chunk %d, series %d", c.Ref, postings.At())
 				}
